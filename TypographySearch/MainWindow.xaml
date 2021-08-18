@@ -17,7 +17,7 @@
                 <TextBlock Name="lblStatus" />
             </StatusBarItem>
         </StatusBar>
-        <ListView x:Name="listView" DockPanel.Dock="Top" ScrollViewer.VerticalScrollBarVisibility="Visible" Margin="5">
+        <ListView x:Name="listView" DockPanel.Dock="Top" ScrollViewer.VerticalScrollBarVisibility="Visible" Margin="5"  GridViewColumnHeader.Click="GridViewColumnHeaderClickedHandler">
             <ListView.View>
                 <GridView>
                     <GridViewColumn Header="Номер" Width="55" DisplayMemberBinding="{Binding Id}"/>

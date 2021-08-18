@@ -5,6 +5,10 @@ using System.Data.OleDb;
 using System.Text;
 using System.Windows;
 using TypographySearch.Models;
+using System.Linq;
+using System.Windows.Controls;
+using System.ComponentModel;
+using System.Windows.Data;
 
 namespace TypographySearch
 {
@@ -24,12 +28,11 @@ namespace TypographySearch
             LoadDataBaseList();
         }
 
-        private void btnClick_Click(object sender, RoutedEventArgs e)
+        private string GetQueryString()
         {
-            listView.Items.Clear();
-
             var queryBuild = new StringBuilder();
-
+            var words = GetQueryWords();
+            if (words.Count == 0) return string.Empty;
             queryBuild.Append("SELECT ");
             queryBuild.Append("ZakWork.Id, ");
             queryBuild.Append("ZakWork.SName as OrderName, ");
@@ -40,24 +43,39 @@ namespace TypographySearch
             queryBuild.Append("FROM ZakWork ");
             queryBuild.Append("LEFT JOIN Manager ON ZakWork.IdManager = Manager.Id ");
             queryBuild.Append("LEFT JOIN Klient ON ZakWork.IdKlient = Klient.Id ");
-            queryBuild.Append("WHERE CHARINDEX('" + txboxQuery.Text + "', ZakWork.SName) > 0");
-            queryBuild.Append("OR CHARINDEX('" + txboxQuery.Text + "', ZakWork.Primech) > 0");
-            queryBuild.Append("OR CHARINDEX('" + txboxQuery.Text + "', Klient.SName) > 0");
-            queryBuild.Append("OR CHARINDEX('" + txboxQuery.Text + "', Manager.LastName) > 0");
+            queryBuild.Append("WHERE ");
+            for (int i = 0; i < words.Count; i++)
+            {
+                queryBuild.Append("(CHARINDEX('" + words[i] + "', ZakWork.SName) > 0");
+                queryBuild.Append("OR CHARINDEX('" + words[i] + "', ZakWork.Primech) > 0");
+                queryBuild.Append("OR CHARINDEX('" + words[i] + "', Klient.SName) > 0");
+                queryBuild.Append("OR CHARINDEX('" + words[i] + "', Manager.LastName) > 0) ");
+                if (i + 1 < words.Count)
+                    queryBuild.Append("AND ");
+            }
+            return queryBuild.ToString();
+        }
 
-            string queryString = queryBuild.ToString();
+        private List<string> GetQueryWords()
+        {
+            return txboxQuery.Text.Split(new char[0], StringSplitOptions.RemoveEmptyEntries).ToList();
+        }
 
+        private void btnClick_Click(object sender, RoutedEventArgs e)
+        {
+            string query = GetQueryString();
+            if (query == string.Empty) return;
+            List<Order> orders = new List<Order>();
             try
             {
                 var connection = dB.GetConnection();
-                OleDbCommand command = new OleDbCommand(queryString, connection);
+                OleDbCommand command = new OleDbCommand(query, connection);
 
                 connection.Open();
-
                 OleDbDataReader reader = command.ExecuteReader();
                 while (reader.Read())
                 {
-                    listView.Items.Add(new Order
+                    orders.Add(new Order
                     {
                         Id = reader.GetInt32(0),
                         Name = reader.GetString(1),
@@ -68,9 +86,9 @@ namespace TypographySearch
                     });
                 }
                 reader.Close();
-
                 connection.Close();
 
+                listView.ItemsSource = orders;
                 lblStatus.Text = "Поиск закончен";
             }
             catch (Exception exception)
@@ -97,5 +115,73 @@ namespace TypographySearch
                 cmbDataBases.Items.Add(row[0]);
             cmbDataBases.SelectedItem = connection.Database;
         }
+
+        #region column sorting
+
+        GridViewColumnHeader _lastHeaderClicked = null;
+        ListSortDirection _lastDirection = ListSortDirection.Ascending;
+        void GridViewColumnHeaderClickedHandler(object sender, RoutedEventArgs e)
+        {
+            var headerClicked = e.OriginalSource as GridViewColumnHeader;
+            ListSortDirection direction;
+
+            if (headerClicked != null)
+            {
+                if (headerClicked.Role != GridViewColumnHeaderRole.Padding)
+                {
+                    if (headerClicked != _lastHeaderClicked)
+                    {
+                        direction = ListSortDirection.Ascending;
+                    }
+                    else
+                    {
+                        if (_lastDirection == ListSortDirection.Ascending)
+                        {
+                            direction = ListSortDirection.Descending;
+                        }
+                        else
+                        {
+                            direction = ListSortDirection.Ascending;
+                        }
+                    }
+
+                    var columnBinding = headerClicked.Column.DisplayMemberBinding as Binding;
+                    var sortBy = columnBinding?.Path.Path ?? headerClicked.Column.Header as string;
+
+                    Sort(sortBy, direction);
+
+                    if (direction == ListSortDirection.Ascending)
+                    {
+                        headerClicked.Column.HeaderTemplate =
+                          Resources["HeaderTemplateArrowUp"] as DataTemplate;
+                    }
+                    else
+                    {
+                        headerClicked.Column.HeaderTemplate =
+                          Resources["HeaderTemplateArrowDown"] as DataTemplate;
+                    }
+
+                    // Remove arrow from previously sorted header
+                    if (_lastHeaderClicked != null && _lastHeaderClicked != headerClicked)
+                    {
+                        _lastHeaderClicked.Column.HeaderTemplate = null;
+                    }
+
+                    _lastHeaderClicked = headerClicked;
+                    _lastDirection = direction;
+                }
+            }
+        }
+        private void Sort(string sortBy, ListSortDirection direction)
+        {
+            ICollectionView dataView =
+              CollectionViewSource.GetDefaultView(listView.ItemsSource);
+
+            dataView.SortDescriptions.Clear();
+            SortDescription sd = new SortDescription(sortBy, direction);
+            dataView.SortDescriptions.Add(sd);
+            dataView.Refresh();
+        }
+        #endregion
     }
 }
